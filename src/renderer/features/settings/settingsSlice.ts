@@ -2,9 +2,13 @@ import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
 export type ConnectionStatus = "disconnected" | "connecting" | "ready";
 export type StreamingMode = "lowLatency" | "performance";
+export type VoicePlatform = "discord" | "fluxer";
 
 export interface SettingsState {
   discordToken: string;
+  voicePlatform: VoicePlatform;
+  fluxerToken: string;
+  fluxerChannelId: string;
   urlBarEnabled: boolean;
   remoteEnabled: boolean;
   remoteAddress: string;
@@ -17,6 +21,9 @@ export interface SettingsState {
 
 const initialState: SettingsState = {
   discordToken: "",
+  voicePlatform: "discord",
+  fluxerToken: "",
+  fluxerChannelId: "",
   urlBarEnabled: true,
   remoteEnabled: false,
   remoteAddress: "127.0.0.1",
@@ -33,6 +40,15 @@ export const connectionSlice = createSlice({
   reducers: {
     setDiscordToken: (state, action: PayloadAction<string>) => {
       state.discordToken = action.payload;
+    },
+    setVoicePlatform: (state, action: PayloadAction<VoicePlatform>) => {
+      state.voicePlatform = action.payload;
+    },
+    setFluxerToken: (state, action: PayloadAction<string>) => {
+      state.fluxerToken = action.payload;
+    },
+    setFluxerChannelId: (state, action: PayloadAction<string>) => {
+      state.fluxerChannelId = action.payload;
     },
     setURLBarEnabled: (state, action: PayloadAction<boolean>) => {
       state.urlBarEnabled = action.payload;
@@ -63,6 +79,9 @@ export const connectionSlice = createSlice({
 
 export const {
   setDiscordToken,
+  setVoicePlatform,
+  setFluxerToken,
+  setFluxerChannelId,
   setURLBarEnabled,
   setRemoteEnabled,
   setRemoteAddress,

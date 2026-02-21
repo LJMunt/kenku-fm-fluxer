@@ -1,0 +1,156 @@
+import { BrowserWindow, ipcMain } from "electron";
+import { ChildProcessWithoutNullStreams, spawn } from "child_process";
+import { AudioStreamPayload, VoiceBackend } from "./VoiceBackend";
+
+const featureEnabled = process.env.KENKU_ENABLE_FLUXER === "1";
+
+export class FluxerBroadcast implements VoiceBackend {
+  window: BrowserWindow;
+  client: any;
+  voiceManager: any;
+  connection: any;
+  ffmpeg?: ChildProcessWithoutNullStreams;
+
+  constructor(window: BrowserWindow) {
+    this.window = window;
+    ipcMain.on("FLUXER_CONNECT", this._handleConnect);
+    ipcMain.on("FLUXER_DISCONNECT", this._handleDisconnect);
+    ipcMain.on("FLUXER_JOIN_CHANNEL", this._handleJoinChannel);
+    ipcMain.on("FLUXER_LEAVE_CHANNEL", this._handleLeaveChannel);
+  }
+
+  destroy() {
+    ipcMain.off("FLUXER_CONNECT", this._handleConnect);
+    ipcMain.off("FLUXER_DISCONNECT", this._handleDisconnect);
+    ipcMain.off("FLUXER_JOIN_CHANNEL", this._handleJoinChannel);
+    ipcMain.off("FLUXER_LEAVE_CHANNEL", this._handleLeaveChannel);
+    this.stopStream();
+    this.connection?.leave?.();
+    this.client?.destroy?.();
+    this.client = undefined;
+    this.voiceManager = undefined;
+    this.connection = undefined;
+  }
+
+  startStream(payload: AudioStreamPayload) {
+    if (!this.connection || !featureEnabled) {
+      return;
+    }
+    this.stopStream();
+
+    const ffmpeg = spawn("ffmpeg", [
+      "-loglevel",
+      "error",
+      "-f",
+      "s16le",
+      "-ar",
+      String(payload.sampleRate),
+      "-ac",
+      String(payload.channels),
+      "-i",
+      "pipe:0",
+      "-c:a",
+      "libopus",
+      "-application",
+      "audio",
+      "-b:a",
+      "128k",
+      "-f",
+      "ogg",
+      "pipe:1",
+    ]);
+
+    ffmpeg.on("error", (error) => {
+      this.window.webContents.send("ERROR", `Fluxer ffmpeg error: ${error.message}`);
+    });
+    ffmpeg.stderr.on("data", (data) => {
+      const message = String(data).trim();
+      if (message) {
+        this.window.webContents.send("ERROR", `Fluxer ffmpeg: ${message}`);
+      }
+    });
+
+    (payload.pcmStream as any).pipe(ffmpeg.stdin as any);
+    this.connection.play(ffmpeg.stdout);
+    this.ffmpeg = ffmpeg;
+  }
+
+  stopStream() {
+    if (this.ffmpeg) {
+      this.ffmpeg.stdin.destroy();
+      this.ffmpeg.stdout.destroy();
+      this.ffmpeg.kill("SIGKILL");
+      this.ffmpeg = undefined;
+    }
+    this.connection?.stop?.();
+  }
+
+  _handleConnect = async (event: Electron.IpcMainEvent, token: string) => {
+    if (!featureEnabled) {
+      event.reply("FLUXER_DISCONNECTED");
+      event.reply(
+        "ERROR",
+        "Fluxer backend is disabled. Set KENKU_ENABLE_FLUXER=1 to enable it.",
+      );
+      return;
+    }
+
+    try {
+      const runtimeRequire =
+        (global as any).__non_webpack_require__ || module.require.bind(module);
+      const core = runtimeRequire("@fluxerjs/core");
+      const voice = runtimeRequire("@fluxerjs/voice");
+
+      this.client?.destroy?.();
+      this.client = new core.Client({ token });
+      this.voiceManager = new voice.VoiceManager(this.client);
+      await this.client.login?.(token);
+      event.reply("FLUXER_READY");
+      event.reply("MESSAGE", "Connected to Fluxer");
+    } catch (err) {
+      event.reply("FLUXER_DISCONNECTED");
+      event.reply("ERROR", `Error connecting to Fluxer bot: ${err.message}`);
+    }
+  };
+
+  _handleDisconnect = async (event: Electron.IpcMainEvent) => {
+    this.stopStream();
+    this.connection?.leave?.();
+    this.connection = undefined;
+    this.client?.destroy?.();
+    this.client = undefined;
+    this.voiceManager = undefined;
+    event.reply("FLUXER_DISCONNECTED");
+    event.reply("FLUXER_CHANNEL_LEFT", "");
+  };
+
+  _handleJoinChannel = async (
+    event: Electron.IpcMainEvent,
+    channelId: string,
+  ) => {
+    if (!this.voiceManager) {
+      event.reply("FLUXER_CHANNEL_LEFT", channelId);
+      event.reply("ERROR", "Fluxer client is not connected.");
+      return;
+    }
+
+    try {
+      this.connection?.leave?.();
+      this.connection = await this.voiceManager.join(channelId);
+      event.reply("FLUXER_CHANNEL_JOINED", channelId);
+    } catch (err) {
+      event.reply("FLUXER_CHANNEL_LEFT", channelId);
+      event.reply("ERROR", `Error connecting to Fluxer voice channel: ${err.message}`);
+    }
+  };
+
+  _handleLeaveChannel = async (
+    event: Electron.IpcMainEvent,
+    channelId: string,
+  ) => {
+    this.stopStream();
+    this.connection?.leave?.();
+    this.connection = undefined;
+    event.reply("FLUXER_CHANNEL_LEFT", channelId);
+  };
+}

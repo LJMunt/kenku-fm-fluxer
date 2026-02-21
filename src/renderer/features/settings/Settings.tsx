@@ -26,6 +26,9 @@ import { useSelector, useDispatch } from "react-redux";
 import { setStatus } from "../connection/connectionSlice";
 import {
   setDiscordToken,
+  setFluxerChannelId,
+  setFluxerToken,
+  setVoicePlatform,
   setExternalInputsEnabled,
   setMultipleInputsEnabled,
   setMultipleOutputsEnabled,
@@ -35,6 +38,7 @@ import {
   setURLBarEnabled,
   setStreamingMode,
   StreamingMode,
+  VoicePlatform,
 } from "./settingsSlice";
 import { showWindowControls } from "../../common/showWindowControls";
 
@@ -52,19 +56,43 @@ export function Settings({ open, onClose }: SettingsProps) {
     dispatch(setDiscordToken(e.target.value));
   }
 
+  function handleFluxerTokenChange(e: React.ChangeEvent<HTMLInputElement>) {
+    dispatch(setFluxerToken(e.target.value));
+  }
+
+  function handleFluxerChannelIdChange(e: React.ChangeEvent<HTMLInputElement>) {
+    dispatch(setFluxerChannelId(e.target.value));
+  }
+
+  function handleVoicePlatformChange(event: SelectChangeEvent) {
+    const platform = event.target.value as VoicePlatform;
+    dispatch(setVoicePlatform(platform));
+    window.kenku.setVoicePlatform(platform);
+    dispatch(setStatus("disconnected"));
+  }
+
   function handleDiscordConnect() {
     if (connection.status === "disconnected") {
       dispatch(setStatus("connecting"));
-      window.kenku.connect(settings.discordToken);
+      const token =
+        settings.voicePlatform === "fluxer"
+          ? settings.fluxerToken
+          : settings.discordToken;
+      window.kenku.connect(token);
     } else {
       window.kenku.disconnect();
     }
   }
 
   useEffect(() => {
-    if (settings.discordToken) {
+    window.kenku.setVoicePlatform(settings.voicePlatform);
+    const token =
+      settings.voicePlatform === "fluxer"
+        ? settings.fluxerToken
+        : settings.discordToken;
+    if (token) {
       dispatch(setStatus("connecting"));
-      window.kenku.connect(settings.discordToken);
+      window.kenku.connect(token);
     }
 
     return () => {
@@ -79,12 +107,38 @@ export function Settings({ open, onClose }: SettingsProps) {
     window.kenku.on("DISCORD_DISCONNECTED", () => {
       dispatch(setStatus("disconnected"));
     });
+    window.kenku.on("FLUXER_READY", () => {
+      dispatch(setStatus("ready"));
+      if (settings.fluxerChannelId) {
+        window.kenku.joinChannel(settings.fluxerChannelId);
+      }
+    });
+    window.kenku.on("FLUXER_DISCONNECTED", () => {
+      dispatch(setStatus("disconnected"));
+    });
 
     return () => {
       window.kenku.removeAllListeners("DISCORD_READY");
       window.kenku.removeAllListeners("DISCORD_DISCONNECTED");
+      window.kenku.removeAllListeners("FLUXER_READY");
+      window.kenku.removeAllListeners("FLUXER_DISCONNECTED");
     };
-  }, [dispatch]);
+  }, [dispatch, settings.fluxerChannelId]);
+
+  const platformSettings = (
+    <FormControl fullWidth variant="standard" margin="dense">
+      <InputLabel id="voice-platform-select-label">Platform</InputLabel>
+      <Select
+        labelId="voice-platform-select-label"
+        id="voice-platform-select"
+        value={settings.voicePlatform}
+        onChange={handleVoicePlatformChange}
+      >
+        <MenuItem value="discord">Discord</MenuItem>
+        <MenuItem value="fluxer">Fluxer (experimental)</MenuItem>
+      </Select>
+    </FormControl>
+  );
 
   const discordSettings = (
     <Stack spacing={1}>
@@ -101,13 +155,44 @@ export function Settings({ open, onClose }: SettingsProps) {
         InputLabelProps={{
           shrink: true,
         }}
-        value={settings.discordToken}
-        onChange={handleDiscordTokenChange}
+        value={settings.voicePlatform === "fluxer" ? settings.fluxerToken : settings.discordToken}
+        onChange={
+          settings.voicePlatform === "fluxer"
+            ? handleFluxerTokenChange
+            : handleDiscordTokenChange
+        }
         disabled={connection.status !== "disconnected"}
-        helperText="Enter your bot's token"
+        helperText={
+          settings.voicePlatform === "fluxer"
+            ? "Enter your Fluxer bot token"
+            : "Enter your bot's token"
+        }
       />
+      {settings.voicePlatform === "fluxer" && (
+        <TextField
+          margin="dense"
+          size="small"
+          id="fluxer-channel-id"
+          label="Voice Channel ID"
+          fullWidth
+          variant="standard"
+          autoComplete="off"
+          InputLabelProps={{
+            shrink: true,
+          }}
+          value={settings.fluxerChannelId}
+          onChange={handleFluxerChannelIdChange}
+          disabled={connection.status !== "disconnected"}
+          helperText="Fluxer voice channel id to auto-join"
+        />
+      )}
       <Button
-        disabled={connection.status === "connecting" || !settings.discordToken}
+        disabled={
+          connection.status === "connecting" ||
+          !(settings.voicePlatform === "fluxer"
+            ? settings.fluxerToken
+            : settings.discordToken)
+        }
         onClick={handleDiscordConnect}
         fullWidth
         variant="outlined"
@@ -121,16 +206,18 @@ export function Settings({ open, onClose }: SettingsProps) {
           "Connect"
         )}
       </Button>
-      <Link
-        href="https://kenku.fm/docs/getting-a-discord-token"
-        variant="caption"
-        textAlign="center"
-        target="_blank"
-        rel="noopener noreferrer"
-        py={2}
-      >
-        Where do I get my token?
-      </Link>
+      {settings.voicePlatform === "discord" && (
+        <Link
+          href="https://kenku.fm/docs/getting-a-discord-token"
+          variant="caption"
+          textAlign="center"
+          target="_blank"
+          rel="noopener noreferrer"
+          py={2}
+        >
+          Where do I get my token?
+        </Link>
+      )}
     </Stack>
   );
 
@@ -358,7 +445,8 @@ export function Settings({ open, onClose }: SettingsProps) {
         Settings
       </DialogTitle>
       <DialogContent>
-        <DialogContentText>Discord</DialogContentText>
+        <DialogContentText>Voice Output</DialogContentText>
+        {platformSettings}
         {discordSettings}
         <Divider sx={{ mb: 2 }} />
         <DialogContentText>Remote</DialogContentText>

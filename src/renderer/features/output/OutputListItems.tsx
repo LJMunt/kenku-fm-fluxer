@@ -43,11 +43,22 @@ export function OutputListItems() {
     window.kenku.on("DISCORD_CHANNEL_JOINED", (args) => {
       dispatch(addOutput(args[0]));
     });
+    window.kenku.on("FLUXER_CHANNEL_LEFT", (args) => {
+      const id = args[0];
+      if (id) {
+        dispatch(removeOutput(id));
+      }
+    });
+    window.kenku.on("FLUXER_CHANNEL_JOINED", (args) => {
+      dispatch(setOutput(args[0]));
+    });
 
     return () => {
       window.kenku.removeAllListeners("DISCORD_GUILDS");
       window.kenku.removeAllListeners("DISCORD_CHANNEL_LEFT");
       window.kenku.removeAllListeners("DISCORD_CHANNEL_JOINED");
+      window.kenku.removeAllListeners("FLUXER_CHANNEL_LEFT");
+      window.kenku.removeAllListeners("FLUXER_CHANNEL_JOINED");
     };
   }, [dispatch]);
 

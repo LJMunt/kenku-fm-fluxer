@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain, webContents } from "electron";
 import { TypedEmitter } from "tiny-typed-emitter";
 import { Readable } from "stream";
+import { PassThrough } from "stream";
 import { WebSocketServer, WebSocket } from "ws";
 import prism from "prism-media";
 
@@ -8,7 +9,13 @@ declare const AUDIO_CAPTURE_WINDOW_WEBPACK_ENTRY: string;
 declare const AUDIO_CAPTURE_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
 interface AudioCaptureManagerEvents {
-  streamStart: (stream: Readable) => void;
+  streamStart: (stream: {
+    opusStream: Readable;
+    pcmStream: Readable;
+    channels: number;
+    frameSize: number;
+    sampleRate: number;
+  }) => void;
   streamEnd: () => void;
 }
 
@@ -20,6 +27,7 @@ interface AudioCaptureManagerEvents {
 export class AudioCaptureManagerMain extends TypedEmitter<AudioCaptureManagerEvents> {
   _browserWindow: BrowserWindow;
   _encoder?: prism.opus.Encoder;
+  _pcmStream?: PassThrough;
   _wss: WebSocketServer;
 
   constructor() {
@@ -153,6 +161,7 @@ export class AudioCaptureManagerMain extends TypedEmitter<AudioCaptureManagerEve
     sampleRate: number
   ) => {
     this._encoder?.end();
+    this._pcmStream?.end();
 
     // Create a pipeline for converting raw PCM data into opus packets
     const encoder = new prism.opus.Encoder({
@@ -161,16 +170,27 @@ export class AudioCaptureManagerMain extends TypedEmitter<AudioCaptureManagerEve
       rate: sampleRate,
     });
     this._encoder = encoder;
+    const pcmStream = new PassThrough();
+    this._pcmStream = pcmStream;
 
     // Setup any listener streams
-    this.emit("streamStart", encoder);
+    this.emit("streamStart", {
+      opusStream: encoder,
+      pcmStream,
+      channels,
+      frameSize,
+      sampleRate,
+    });
   };
 
   _handleStreamData = async (data: Buffer) => {
+    this._pcmStream?.write(data);
     this._encoder?.write(data);
   };
 
   _handleStreamEnd = () => {
+    this._pcmStream?.end();
+    this._pcmStream = undefined;
     this._encoder?.end();
     this._encoder = undefined;
     this.emit("streamEnd");

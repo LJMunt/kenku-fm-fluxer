@@ -1,11 +1,13 @@
 import { BrowserWindow, ipcMain } from "electron";
 import { ChannelType, Client, Events, GatewayIntentBits } from "discord.js";
 import {
+  createAudioResource,
   createAudioPlayer,
   getVoiceConnection,
   joinVoiceChannel,
   NoSubscriberBehavior,
 } from "@discordjs/voice";
+import { AudioStreamPayload, VoiceBackend } from "./VoiceBackend";
 
 type VoiceChannel = {
   id: string;
@@ -19,7 +21,7 @@ type Guild = {
   voiceChannels: VoiceChannel[];
 };
 
-export class DiscordBroadcast {
+export class DiscordBroadcast implements VoiceBackend {
   window: BrowserWindow;
   client?: Client;
   audioPlayer = createAudioPlayer({
@@ -45,6 +47,15 @@ export class DiscordBroadcast {
     ipcMain.off("DISCORD_LEAVE_CHANNEL", this._handleLeaveChannel);
     this.client?.destroy();
     this.client = undefined;
+  }
+
+  startStream(payload: AudioStreamPayload) {
+    const resource = createAudioResource(payload.opusStream);
+    this.audioPlayer.play(resource);
+  }
+
+  stopStream() {
+    this.audioPlayer.stop();
   }
 
   _handleConnect = async (event: Electron.IpcMainEvent, token: string) => {
