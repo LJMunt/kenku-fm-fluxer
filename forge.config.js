@@ -44,8 +44,8 @@ const config = {
       name: "@electron-forge/publisher-github",
       config: {
         repository: {
-          owner: "owlbear-rodeo",
-          name: "kenku-fm",
+          owner: process.env.FORGE_PUBLISH_REPO_OWNER || "owlbear-rodeo",
+          name: process.env.FORGE_PUBLISH_REPO_NAME || "kenku-fm",
         },
         prerelease: false,
         draft: false,

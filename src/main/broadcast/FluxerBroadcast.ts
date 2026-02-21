@@ -1,8 +1,10 @@
 import { BrowserWindow, ipcMain } from "electron";
 import { ChildProcessWithoutNullStreams, spawn } from "child_process";
+import { Client } from "@fluxerjs/core";
+import { VoiceManager } from "@fluxerjs/voice";
 import { AudioStreamPayload, VoiceBackend } from "./VoiceBackend";
 
-const featureEnabled = process.env.KENKU_ENABLE_FLUXER === "1";
+const featureEnabled = process.env.KENKU_ENABLE_FLUXER !== "0";
 
 export class FluxerBroadcast implements VoiceBackend {
   window: BrowserWindow;
@@ -25,7 +27,7 @@ export class FluxerBroadcast implements VoiceBackend {
     ipcMain.off("FLUXER_JOIN_CHANNEL", this._handleJoinChannel);
     ipcMain.off("FLUXER_LEAVE_CHANNEL", this._handleLeaveChannel);
     this.stopStream();
-    this.connection?.leave?.();
+    this.connection?.disconnect?.();
     this.client?.destroy?.();
     this.client = undefined;
     this.voiceManager = undefined;
@@ -56,7 +58,9 @@ export class FluxerBroadcast implements VoiceBackend {
       "-b:a",
       "128k",
       "-f",
-      "ogg",
+      "webm",
+      "-dash",
+      "1",
       "pipe:1",
     ]);
 
@@ -90,23 +94,57 @@ export class FluxerBroadcast implements VoiceBackend {
       event.reply("FLUXER_DISCONNECTED");
       event.reply(
         "ERROR",
-        "Fluxer backend is disabled. Set KENKU_ENABLE_FLUXER=1 to enable it.",
+        "Fluxer backend is disabled. Set KENKU_ENABLE_FLUXER=1 (or omit it) to enable it.",
       );
       return;
     }
 
     try {
-      const runtimeRequire =
-        (global as any).__non_webpack_require__ || module.require.bind(module);
-      const core = runtimeRequire("@fluxerjs/core");
-      const voice = runtimeRequire("@fluxerjs/voice");
-
       this.client?.destroy?.();
-      this.client = new core.Client({ token });
-      this.voiceManager = new voice.VoiceManager(this.client);
-      await this.client.login?.(token);
-      event.reply("FLUXER_READY");
-      event.reply("MESSAGE", "Connected to Fluxer");
+      this.client = new Client();
+      this.voiceManager = new VoiceManager(this.client);
+
+      this.client.once("ready", async () => {
+        event.reply("FLUXER_READY");
+        event.reply("MESSAGE", "Connected to Fluxer");
+
+        try {
+          const rawGuilds = await this.client.user.fetchGuilds();
+          const guilds = await Promise.all(
+            rawGuilds.map(async (guild: any) => {
+              const voiceChannels: any[] = [];
+              const channels = await guild.fetchChannels();
+              channels.forEach((channel: any) => {
+                if (channel && channel.isVoice()) {
+                  voiceChannels.push({
+                    id: channel.id,
+                    name: channel.name,
+                  });
+                }
+              });
+              return {
+                id: guild.id,
+                name: guild.name,
+                icon: guild.iconURL(),
+                voiceChannels,
+              };
+            })
+          );
+          event.reply("FLUXER_GUILDS", guilds);
+        } catch (err) {
+          this.window.webContents.send(
+            "ERROR",
+            `Error fetching Fluxer guilds: ${err.message}`,
+          );
+        }
+      });
+
+      this.client.on("error", (err: any) => {
+        event.reply("FLUXER_DISCONNECTED");
+        event.reply("ERROR", `Error connecting to Fluxer bot: ${err.message}`);
+      });
+
+      await this.client.login(token);
     } catch (err) {
       event.reply("FLUXER_DISCONNECTED");
       event.reply("ERROR", `Error connecting to Fluxer bot: ${err.message}`);
@@ -115,7 +153,7 @@ export class FluxerBroadcast implements VoiceBackend {
 
   _handleDisconnect = async (event: Electron.IpcMainEvent) => {
     this.stopStream();
-    this.connection?.leave?.();
+    this.connection?.disconnect?.();
     this.connection = undefined;
     this.client?.destroy?.();
     this.client = undefined;
@@ -128,16 +166,22 @@ export class FluxerBroadcast implements VoiceBackend {
     event: Electron.IpcMainEvent,
     channelId: string,
   ) => {
-    if (!this.voiceManager) {
+    if (!this.client || !this.voiceManager) {
       event.reply("FLUXER_CHANNEL_LEFT", channelId);
       event.reply("ERROR", "Fluxer client is not connected.");
       return;
     }
 
     try {
-      this.connection?.leave?.();
-      this.connection = await this.voiceManager.join(channelId);
-      event.reply("FLUXER_CHANNEL_JOINED", channelId);
+      const channel = await this.client.channels.fetch(channelId);
+      if (channel && channel.isVoice()) {
+        this.connection?.disconnect?.();
+        this.connection = await this.voiceManager.join(channel);
+        event.reply("FLUXER_CHANNEL_JOINED", channelId);
+      } else {
+        event.reply("FLUXER_CHANNEL_LEFT", channelId);
+        event.reply("ERROR", "Channel not found or is not a voice channel.");
+      }
     } catch (err) {
       event.reply("FLUXER_CHANNEL_LEFT", channelId);
       event.reply("ERROR", `Error connecting to Fluxer voice channel: ${err.message}`);
@@ -149,7 +193,9 @@ export class FluxerBroadcast implements VoiceBackend {
     channelId: string,
   ) => {
     this.stopStream();
-    this.connection?.leave?.();
+    if (this.voiceManager) {
+      this.voiceManager.leaveChannel(channelId);
+    }
     this.connection = undefined;
     event.reply("FLUXER_CHANNEL_LEFT", channelId);
   };

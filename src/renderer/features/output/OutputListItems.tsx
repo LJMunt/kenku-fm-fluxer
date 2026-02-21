@@ -35,6 +35,11 @@ export function OutputListItems() {
       dispatch(setGuilds(guilds));
     });
 
+    window.kenku.on("FLUXER_GUILDS", (args) => {
+      const guilds = args[0];
+      dispatch(setGuilds(guilds));
+    });
+
     window.kenku.on("DISCORD_CHANNEL_LEFT", (args) => {
       const id = args[0];
       dispatch(removeOutput(id));
@@ -55,6 +60,7 @@ export function OutputListItems() {
 
     return () => {
       window.kenku.removeAllListeners("DISCORD_GUILDS");
+      window.kenku.removeAllListeners("FLUXER_GUILDS");
       window.kenku.removeAllListeners("DISCORD_CHANNEL_LEFT");
       window.kenku.removeAllListeners("DISCORD_CHANNEL_JOINED");
       window.kenku.removeAllListeners("FLUXER_CHANNEL_LEFT");

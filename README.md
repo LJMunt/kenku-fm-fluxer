@@ -55,7 +55,7 @@ If you wish to add protected media playback support follow the build steps from 
 Kenku FM now includes an experimental Fluxer voice backend in addition to Discord.
 
 1. Install Fluxer voice dependencies in your environment: `@fluxerjs/core` and `@fluxerjs/voice`.
-2. Start Kenku with `KENKU_ENABLE_FLUXER=1`.
+2. Fluxer is enabled by default; set `KENKU_ENABLE_FLUXER=0` only if you need to disable it.
 3. Open **Settings** and set **Platform** to **Fluxer (experimental)**.
 4. Enter a Fluxer bot token and a target voice channel id, then click **Connect**.
 
