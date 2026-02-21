@@ -14,6 +14,11 @@ type Channel =
   | "DISCORD_GUILDS"
   | "DISCORD_CHANNEL_JOINED"
   | "DISCORD_CHANNEL_LEFT"
+  | "FLUXER_READY"
+  | "FLUXER_DISCONNECTED"
+  | "FLUXER_GUILDS"
+  | "FLUXER_CHANNEL_JOINED"
+  | "FLUXER_CHANNEL_LEFT"
   | "SHOW_CONTROLS"
   | "BROWSER_VIEW_DID_NAVIGATE"
   | "BROWSER_VIEW_TITLE_UPDATED"
@@ -34,6 +39,11 @@ const validChannels: Channel[] = [
   "DISCORD_GUILDS",
   "DISCORD_CHANNEL_JOINED",
   "DISCORD_CHANNEL_LEFT",
+  "FLUXER_READY",
+  "FLUXER_DISCONNECTED",
+  "FLUXER_GUILDS",
+  "FLUXER_CHANNEL_JOINED",
+  "FLUXER_CHANNEL_LEFT",
   "SHOW_CONTROLS",
   "BROWSER_VIEW_DID_NAVIGATE",
   "BROWSER_VIEW_TITLE_UPDATED",
@@ -51,17 +61,39 @@ ipcRenderer.on("BROWSER_VIEW_LOADED", (_, viewId: number) => {
 });
 
 const api = {
+  _voicePlatform: "discord" as "discord" | "fluxer",
+  setVoicePlatform: (platform: "discord" | "fluxer") => {
+    api._voicePlatform = platform;
+    ipcRenderer.send("VOICE_SET_PLATFORM", platform);
+  },
   connect: (token: string) => {
-    ipcRenderer.send("DISCORD_CONNECT", token);
+    ipcRenderer.send(
+      api._voicePlatform === "fluxer" ? "FLUXER_CONNECT" : "DISCORD_CONNECT",
+      token,
+    );
   },
   disconnect: () => {
-    ipcRenderer.send("DISCORD_DISCONNECT");
+    ipcRenderer.send(
+      api._voicePlatform === "fluxer"
+        ? "FLUXER_DISCONNECT"
+        : "DISCORD_DISCONNECT",
+    );
   },
   joinChannel: (channelId: string) => {
-    ipcRenderer.send("DISCORD_JOIN_CHANNEL", channelId);
+    ipcRenderer.send(
+      api._voicePlatform === "fluxer"
+        ? "FLUXER_JOIN_CHANNEL"
+        : "DISCORD_JOIN_CHANNEL",
+      channelId,
+    );
   },
   leaveChannel: (channelId: string) => {
-    ipcRenderer.send("DISCORD_LEAVE_CHANNEL", channelId);
+    ipcRenderer.send(
+      api._voicePlatform === "fluxer"
+        ? "FLUXER_LEAVE_CHANNEL"
+        : "DISCORD_LEAVE_CHANNEL",
+      channelId,
+    );
   },
   createBrowserView: async (
     url: string,

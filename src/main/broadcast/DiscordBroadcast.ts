@@ -1,11 +1,15 @@
 import { BrowserWindow, ipcMain } from "electron";
 import { ChannelType, Client, Events, GatewayIntentBits } from "discord.js";
 import {
+  createAudioResource,
   createAudioPlayer,
   getVoiceConnection,
   joinVoiceChannel,
   NoSubscriberBehavior,
 } from "@discordjs/voice";
+import prism from "prism-media";
+import { AudioStreamPayload, VoiceBackend } from "./VoiceBackend";
+import { Readable } from "stream";
 
 type VoiceChannel = {
   id: string;
@@ -19,7 +23,7 @@ type Guild = {
   voiceChannels: VoiceChannel[];
 };
 
-export class DiscordBroadcast {
+export class DiscordBroadcast implements VoiceBackend {
   window: BrowserWindow;
   client?: Client;
   audioPlayer = createAudioPlayer({
@@ -29,6 +33,8 @@ export class DiscordBroadcast {
       maxMissedFrames: 3000,
     },
   });
+  fallbackEncoder?: prism.opus.Encoder;
+  fallbackPcmSource?: Readable;
   constructor(window: BrowserWindow) {
     this.window = window;
     ipcMain.on("DISCORD_CONNECT", this._handleConnect);
@@ -45,6 +51,39 @@ export class DiscordBroadcast {
     ipcMain.off("DISCORD_LEAVE_CHANNEL", this._handleLeaveChannel);
     this.client?.destroy();
     this.client = undefined;
+  }
+
+  startStream(payload: AudioStreamPayload) {
+    try {
+      this._cleanupFallbackEncoder();
+      let opusSource = payload.opusStream;
+      const sourceEnded =
+        (opusSource as any).readableEnded || (opusSource as any).destroyed;
+
+      if (sourceEnded) {
+        // If the upstream Opus stream is already ended (e.g. after switching back from Fluxer),
+        // recreate a fresh encoder from the live PCM stream.
+        const encoder = new prism.opus.Encoder({
+          channels: payload.channels,
+          frameSize: payload.frameSize,
+          rate: payload.sampleRate,
+        });
+        payload.pcmStream.pipe(encoder as unknown as NodeJS.WritableStream);
+        this.fallbackEncoder = encoder;
+        this.fallbackPcmSource = payload.pcmStream;
+        opusSource = encoder;
+      }
+
+      const resource = createAudioResource(opusSource);
+      this.audioPlayer.play(resource);
+    } catch (error) {
+      this._handleBroadcastError(error as Error);
+    }
+  }
+
+  stopStream() {
+    this.audioPlayer.stop();
+    this._cleanupFallbackEncoder();
   }
 
   _handleConnect = async (event: Electron.IpcMainEvent, token: string) => {
@@ -166,4 +205,19 @@ export class DiscordBroadcast {
     this.window.webContents.send("ERROR", error.message);
     console.error(error);
   };
+
+  _cleanupFallbackEncoder() {
+    if (this.fallbackPcmSource && this.fallbackEncoder) {
+      try {
+        this.fallbackPcmSource.unpipe(
+          this.fallbackEncoder as unknown as NodeJS.WritableStream,
+        );
+      } catch {
+        // noop – unpipe can throw if it was never piped
+      }
+    }
+    this.fallbackEncoder?.destroy();
+    this.fallbackEncoder = undefined;
+    this.fallbackPcmSource = undefined;
+  }
 }

@@ -95,3 +95,4 @@ dist/
 native_modules/
 
 severus/
+/.idea/

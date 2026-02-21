@@ -38,6 +38,8 @@ jobs:
         run: yarn run publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORGE_PUBLISH_REPO_OWNER: ${{ github.repository_owner }}
+          FORGE_PUBLISH_REPO_NAME: ${{ github.event.repository.name }}
 
   mac-release:
     runs-on: ${{ matrix.os.runner }}

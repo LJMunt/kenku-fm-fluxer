@@ -16,5 +16,7 @@ module.exports = {
     "prism-media": "commonjs2 prism-media",
     "libsodium-wrappers": "commonjs2 libsodium-wrappers",
     "discord.js": "commonjs2 discord.js",
+    "@fluxerjs/core": "commonjs2 @fluxerjs/core",
+    "@fluxerjs/voice": "commonjs2 @fluxerjs/voice",
   },
 };

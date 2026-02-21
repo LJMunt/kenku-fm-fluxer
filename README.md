@@ -50,6 +50,19 @@ To make a production build run:
 
 If you wish to add protected media playback support follow the build steps from the [Electron for Content Security](https://github.com/castlabs/electron-releases) repo.
 
+## Fluxer Output (experimental)
+
+Kenku FM now includes an experimental Fluxer voice backend in addition to Discord.
+
+1. Install Fluxer voice dependencies in your environment: `@fluxerjs/core` and `@fluxerjs/voice`.
+2. Fluxer is enabled by default; set `KENKU_ENABLE_FLUXER=0` only if you need to disable it.
+3. Open **Settings** and set **Platform** to **Fluxer (experimental)**.
+4. Enter a Fluxer bot token and a target voice channel id, then click **Connect**.
+
+Notes:
+- Fluxer output uses `ffmpeg` to encode Kenku's mixed PCM stream to Opus-in-Ogg before calling `connection.play(stream)`.
+- The Discord backend remains the default and is unchanged unless you explicitly switch platforms.
+
 ## Stream Deck
 
 The stream deck plugin can be found [here](https://github.com/owlbear-rodeo/kenku-fm-stream-deck).
